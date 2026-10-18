@@ -35,7 +35,8 @@ async function testDRMServerWithScreenshot() {
         if (msg.type() === 'error') console.log(`[PAGE CONSOLE ERROR]: ${msg.text()}`);
     });
 
-    const testUrl = 'https://dlhd.pk/watch.php?id=111';
+    // const testUrl = 'https://dlhd.pk/watch.php?id=111';
+    const testUrl = 'https://ww1.sportsonnline.click/channels/pt/eleven1.php';
     console.log(`[*] Going to URL: ${testUrl}`);
     
     try {
