@@ -1,3 +1,4 @@
+
 name: Fast DRM Server Test
 on: workflow_dispatch
 
@@ -37,3 +38,63 @@ jobs:
           pacmd set-default-sink v1
           pacmd set-default-source v1.monitor
           xvfb-run -s "-screen 0 1280x720x24 -ac" node test-drm.js
+
+      - name: Upload Visual Proof Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stream-Visual-Proof
+          path: live-stream-proof.png
+
+
+
+
+
+
+
+
+
+
+
+# =========== yaha par tuu kehraha hai k video play hu raha hai lekin yeh raw proof hai aab upper scrreshot add karty hai ================
+
+
+# name: Fast DRM Server Test
+# on: workflow_dispatch
+
+# jobs:
+#   run-test:
+#     runs-on: ubuntu-22.04
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v3
+
+#       - name: Setup Node
+#         uses: actions/setup-node@v3
+#         with:
+#           node-version: '18'
+
+#       - name: Install Audio, Display & WARP
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y xvfb pulseaudio dbus-x11 libnss3 libgbm1 fonts-liberation
+          
+#           # Cloudflare WARP Setup
+#           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+#           echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+#           sudo apt-get update && sudo apt-get install -y cloudflare-warp
+#           warp-cli --accept-tos registration new
+#           warp-cli --accept-tos mode proxy
+#           warp-cli --accept-tos proxy port 40000
+#           warp-cli --accept-tos connect
+#           sleep 4
+          
+#           npm install
+
+#       - name: Run DRM Video Test
+#         run: |
+#           pulseaudio -D --exit-idle-time=-1
+#           pacmd load-module module-virtual-sink sink_name=v1
+#           pacmd set-default-sink v1
+#           pacmd set-default-source v1.monitor
+#           xvfb-run -s "-screen 0 1280x720x24 -ac" node test-drm.js
