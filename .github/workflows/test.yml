@@ -1,0 +1,22 @@
+name: Tmate Live Debugger
+on: workflow_dispatch
+jobs:
+  debug-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install System Dependencies & NPM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus-x11
+          npm install
+
+      - name: Setup Tmate Session (Connect Here)
+        uses: mxschmitt/action-tmate@v3
