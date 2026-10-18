@@ -4,10 +4,10 @@ puppeteer.use(StealthPlugin());
 const path = require('path');
 
 async function testDRMServer() {
-    console.log("[*] Starting Chrome on Linux Server...");
+    console.log("[*] Starting Real Chrome on Linux Server...");
     const browser = await puppeteer.launch({
-        headless: false, // xvfb ke sath chalega
-        executablePath: '/usr/bin/google-chrome', 
+        headless: false,
+        executablePath: '/usr/bin/google-chrome-stable', 
         userDataDir: path.join(process.cwd(), 'chrome-profile'),
         defaultViewport: { width: 1280, height: 720 },
         ignoreDefaultArgs: ['--enable-automation'],
@@ -15,52 +15,105 @@ async function testDRMServer() {
             '--no-sandbox', 
             '--disable-setuid-sandbox', 
             '--autoplay-policy=no-user-gesture-required',
-            '--disable-blink-features=AutomationControlled'
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1280,720',
+            // 🟢 Cloudflare WARP Proxy taake Datacenter IP block na ho
+            '--proxy-server=socks5://127.0.0.1:40000'
         ]
     });
 
     const page = (await browser.pages())[0];
-    const testUrl = 'https://dlhd.pk/watch.php?id=111';
-
-    console.log(`[*] Going to URL: ${testUrl}`);
-    await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-    console.log("[*] Waiting 15 seconds for DRM and Video to load...");
-    await new Promise(r => setTimeout(r, 15000));
-
-    console.log("[*] Checking Video Status...");
-    const videoData = await page.evaluate(() => {
-        let status = { found: false, paused: true, time: 0 };
-        const iframes = Array.from(document.querySelectorAll('iframe'));
-        let v = document.querySelector('video');
-        
-        if (!v) {
-            for (let ifr of iframes) {
-                try {
-                    let inner = ifr.contentWindow.document.querySelector('video');
-                    if (inner) { v = inner; break; }
-                } catch(e) {}
-            }
-        }
-        if (v) {
-            status.found = true;
-            status.paused = v.paused;
-            status.time = v.currentTime;
-        }
-        return status;
+    
+    // 🟢 DRM / EME support check karne ke liye
+    page.on('console', msg => {
+        if (msg.type() === 'error') console.log(`[PAGE CONSOLE ERROR]: ${msg.text()}`);
     });
 
-    console.log("\n====== 📊 SERVER VIDEO REPORT ======");
-    console.log(`- Video Found : ${videoData.found}`);
-    console.log(`- Is Paused   : ${videoData.paused}`);
-    console.log(`- Current Time: ${videoData.time} seconds`);
-    console.log("====================================\n");
-
-    if (videoData.time > 0) {
-        console.log("[✅] SUCCESS: DRM Bypass ho gaya! Video is playing on Server.");
-    } else {
-        console.log("[❌] FAILED: Video at 0.0s. Server/Cloud IP block ya DRM fail.");
+    const testUrl = 'https://dlhd.pk/watch.php?id=111';
+    console.log(`[*] Going to URL: ${testUrl}`);
+    try {
+        await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } catch(e) {
+        console.log("[!] Goto warning:", e.message);
     }
+
+    console.log("[*] Waiting 20 seconds for Nested Iframes, DRM & Video to load...");
+    await new Promise(r => setTimeout(r, 20000));
+
+    console.log("[*] Scanning ALL Nested Iframes using page.frames()...");
+    
+    let report = {
+        totalFrames: page.frames().length,
+        videoFound: false,
+        frameUrl: 'None',
+        paused: true,
+        currentTime: 0,
+        readyState: 0,
+        errorTextOnScreen: 'None',
+        emeSupported: false
+    };
+
+    for (const frame of page.frames()) {
+        try {
+            if (frame.isDetached()) continue;
+            const data = await frame.evaluate(async () => {
+                // Check if Widevine DRM is actually working in this browser
+                let drmOk = false;
+                try {
+                    await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+                        initDataTypes: ['cenc'],
+                        videoCapabilities: [{ contentType: 'video/mp4;codecs="avc1.42E01E"' }]
+                    }]);
+                    drmOk = true;
+                } catch(e) {}
+
+                const bodyText = document.body ? document.body.innerText : '';
+                const hasPlaybackError = bodyText.includes('Playback error') || bodyText.includes('protected content');
+                
+                const v = document.querySelector('video');
+                if (v) {
+                    // Try to force play if paused
+                    if (v.paused) { v.muted = true; v.play().catch(()=>{}); }
+                    return {
+                        found: true,
+                        paused: v.paused,
+                        time: v.currentTime,
+                        readyState: v.readyState,
+                        errText: hasPlaybackError ? 'Playback error: protected content' : 'None',
+                        drmOk: drmOk
+                    };
+                }
+                if (hasPlaybackError) {
+                    return { found: false, errText: 'Playback error: protected content', drmOk: drmOk };
+                }
+                return null;
+            });
+
+            if (data) {
+                if (data.errText !== 'None') report.errorTextOnScreen = data.errText;
+                if (data.drmOk) report.emeSupported = true;
+                if (data.found) {
+                    report.videoFound = true;
+                    report.frameUrl = frame.url();
+                    report.paused = data.paused;
+                    report.currentTime = data.time;
+                    report.readyState = data.readyState;
+                    report.emeSupported = data.drmOk;
+                    break;
+                }
+            }
+        } catch (e) {}
+    }
+
+    console.log("\n====== 📊 EXACT SERVER DIAGNOSTIC REPORT ======");
+    console.log(`- Total Iframes Scanned : ${report.totalFrames}`);
+    console.log(`- Widevine DRM Active?  : ${report.emeSupported}`);
+    console.log(`- Video Element Found?  : ${report.videoFound}`);
+    console.log(`- Video Iframe URL      : ${report.frameUrl}`);
+    console.log(`- Is Paused             : ${report.paused}`);
+    console.log(`- Current Time          : ${report.currentTime} seconds`);
+    console.log(`- Screen Error Message  : ${report.errorTextOnScreen}`);
+    console.log("===============================================\n");
 
     await browser.close();
 }
